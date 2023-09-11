@@ -39,7 +39,7 @@ swagger = Swagger(app, template=swagger_template, config=swagger_config)
 
 #########################################################################################################
 
-POST INPUT USER
+#POST INPUT USER
 @swag_from("docs/text_processing.yml", methods=['POST'])
 @app.route('/text_processing', methods=['POST'])
 def text_processing():
@@ -55,30 +55,51 @@ def text_processing():
     return response_data
 
 #POST INPUT FILE
-@swag_from("docs/post_upload.yml",methods=['POST'])
-@app.route('/upload', methods=['POST'])
-def uploadFile():
-    final=[]
-    file = request.files['file']
-    try:
-        data = pd.read_csv(file, encoding='iso-8859-1',on_bad_lines='skip')
-    except: 
-        data = pd.read_csv(file, encoding='iso-8859-1',on_bad_lines='skip')
+# Baca data frame dari file CSV
+abusive_df = pd.read_csv("abusive.csv")
 
-    response_data = jsonify({"message": "File uploaded successfully"})
-    return response_data, 200
+# Ambil daftar kata-kata abusive dari kolom 'ABUSIVE'
+abusive_words = set(abusive_df['ABUSIVE'].str.lower())  # Konversi ke huruf kecil
 
-# @swag_from("docs/post_upload.yml", methods=['POST'])
-# @app.route('/upload', methods=['POST'])
-# def uploadFile():
-#     final = []
-#     file = request.files['file']
-#     try:
-#         data = pd.read_csv(file, encoding='iso-8859-1', on_bad_lines='skip')
-#         # Lakukan operasi lain dengan data CSV di sini
-#         return 'Upload berhasil', 200
-#     except Exception as e:
-#         return 'Terjadi kesalahan: ' + str(e), 500
+# Fungsi untuk mengganti karakter dengan tanda "*"
+def mask_text(match):
+    return '*' * len(match.group())
+
+# Fungsi untuk mengganti kata-kata abusive dalam teks dengan tanda "*"
+def mask_abusive_text(text):
+    text = text.lower()  # Konversi teks ke huruf kecil
+    for word in abusive_words:
+        text = re.sub(r'\b' + re.escape(word) + r'\b', mask_text, text)
+    return text
+
+class UploadFile(Resource):
+    def post(self):
+        try:
+            file = request.files['file']
+
+            if file:
+                # Simpan file yang diunggah dengan nama yang aman
+                filename = secure_filename(file.filename)
+                file.save(filename)
+
+                # Baca isi file teks
+                with open(filename, 'r') as text_file:
+                    text = text_file.read()
+
+                # Filter teks dengan mengganti kata-kata abusive
+                masked_text = mask_abusive_text(text)
+
+                # Simpan hasil ke file
+                with open("masked_text.txt", "w") as output_file:
+                    output_file.write(masked_text)
+
+                return {"message": "File uploaded successfully and abusive words masked."}, 200
+            else:
+                return {"message": "No file provided in the request."}, 400
+        except Exception as e:
+            return {"message": str(e)}, 500
+
+api.add_resource(UploadFile, '/upload')
 
 
 if __name__ == '__main__':
